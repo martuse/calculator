@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#3b5169">
+<title>계산기</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#1c2630;--sub:#5d6b79;--line:#d8dee4;--acc:#3b5169;--acc-ink:#fff;--op:#e3eaf1;--err:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#14181d;--card:#1f252c;--ink:#eef2f5;--sub:#9aa7b4;--line:#33404c;--acc:#6f93b8;--acc-ink:#0d1319;--op:#2b3948;--err:#ff8a80}}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,"Noto Sans KR",sans-serif;padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 16px)}
+main{max-width:420px;margin:0 auto;padding-top:12px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--op);padding:4px;border-radius:12px}
+.tabs button{border:0;background:none;color:var(--sub);font:inherit;font-weight:700;padding:10px 0;border-radius:9px}
+.tabs button[aria-selected=true]{background:var(--acc);color:var(--acc-ink)}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
+output.disp{display:block;text-align:right;font-size:40px;font-weight:700;min-height:56px;overflow-x:auto;white-space:nowrap}
+.sub{text-align:right;color:var(--sub);min-height:20px;font-size:14px}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}
+.keys button{height:clamp(48px,8.5vh,62px);border:0;border-radius:12px;background:var(--op);color:var(--ink);font:inherit;font-size:22px;font-weight:600}
+.keys button.o{background:var(--acc);color:var(--acc-ink)}
+.keys button:active{filter:brightness(.9)}
+label{display:block;font-size:14px;color:var(--sub);margin-top:10px}
+label span{display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;margin-top:4px;background:var(--bg)}
+input{flex:1;border:0;background:none;color:var(--ink);font:inherit;font-size:20px;padding:10px 12px;outline:0;text-align:right}
+label i{padding-right:12px;font-style:normal;color:var(--sub)}
+.res{font-size:28px;font-weight:700;text-align:right;margin-top:12px}
+.msg{color:var(--sub);font-size:14px;margin:8px 0 0;min-height:20px}.msg.e{color:var(--err)}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.seg button,.act{border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:10px;border-radius:10px}
+.seg button[aria-pressed=true]{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.act{width:100%;margin-top:12px;font-weight:700}
+details{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:4px 14px}
+summary{padding:10px 0;font-weight:700;cursor:pointer}
+details:not([open])>.hist{display:none}
+.hist{max-height:240px;overflow-y:auto;padding-bottom:8px}
+.hist div{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.hist b{white-space:nowrap}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<div class="tabs" role="tablist" id="tabs"></div>
+
+<section id="p0">
+  <div class="sub" id="expr"></div>
+  <output class="disp" id="disp">0</output>
+  <div class="keys" id="keys"></div>
+</section>
+
+<section id="p1" hidden>
+  <div id="dsc"></div>
+  <p class="msg" id="dmsg">아는 값 두 칸을 입력하세요. 나머지는 자동 계산됩니다.</p>
+</section>
+
+<section id="p2" hidden>
+  <div class="res" id="rate" style="font-size:20px;text-align:left">환율을 불러오는 중…</div>
+  <p class="msg" id="rdate"></p>
+  <label>USD<span><input id="usd" inputmode="decimal"><i>$</i></span></label>
+  <label>KRW<span><input id="krw" inputmode="decimal"><i>₩</i></span></label>
+  <button class="act" id="refresh" type="button">환율 새로고침</button>
+  <p class="msg" id="fmsg"></p>
+</section>
+
+<section id="p3" hidden>
+  <div class="seg" id="pm"></div>
+  <label id="pa-l">기준 금액<span><input id="pa" inputmode="decimal"></span></label>
+  <label id="pb-l">퍼센트<span><input id="pb" inputmode="decimal"><i id="pu">%</i></span></label>
+  <p class="msg" id="pmsg"></p>
+</section>
+
+<div class="res" id="res" aria-live="polite"></div>
+<button class="act" id="copy" type="button">결과 복사</button>
+<p class="msg" id="cmsg" aria-live="polite"></p>
+
+<details><summary>계산 기록 <span id="hn" style="color:var(--sub);font-weight:400"></span></summary>
+  <div class="hist" id="hist"></div>
+  <button class="act" id="hclr" type="button" style="margin:4px 0 10px">기록 지우기</button>
+</details>
+</main>
+<script>
+(function(){
+'use strict';
+var $=function(s){return document.querySelector(s)};
+var nf=new Intl.NumberFormat('ko-KR',{maximumFractionDigits:10});
+var dec=function(n,p){return n.toLocaleString('ko-KR',{maximumFractionDigits:p})};
+var won=function(n){return dec(Math.round(n),0)+'원'};
+function num(s){s=String(s).replace(/,/g,'').trim();return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(s)?Number(s):null}
+function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+
+/* 기록 — 최근 30건 */
+var hist=store('calc_hist')||[];
+function paintHist(){
+  $('#hn').textContent='('+hist.length+'/30)';
+  $('#hist').innerHTML=hist.length?hist.map(function(h){return '<div><span>'+h[0]+'</span><b>'+h[1]+'</b></div>'}).join(''):'<div style="border:0;color:var(--sub)">아직 기록이 없습니다.</div>';
+}
+var lastLog='';
+function log(label,val){
+  var key=label+val;if(key===lastLog)return;lastLog=key;
+  hist.unshift([label,val]);hist=hist.slice(0,30);store('calc_hist',hist);paintHist();
+}
+$('#hclr').onclick=function(){hist=[];store('calc_hist',hist);lastLog='';paintHist()};
+
+/* 탭 */
+var mode=0,copyVal='',cur=['','','',''];
+['일반','할인','환율','퍼센트'].forEach(function(t,i){
+  var b=document.createElement('button');b.type='button';b.textContent=t;b.setAttribute('role','tab');
+  b.onclick=function(){show(i)};$('#tabs').appendChild(b);
+});
+function show(i){
+  mode=i;
+  [].forEach.call($('#tabs').children,function(b,j){b.setAttribute('aria-selected',j===i)});
+  for(var j=0;j<4;j++)$('#p'+j).hidden=j!==i;
+  setRes(cur[i]);
+}
+function setRes(s){
+  cur[mode]=s||'';copyVal=cur[mode];
+  $('#res').textContent=cur[mode];$('#res').hidden=mode===0;
+}
+
+/* 1. 일반 */
+var g='0',saved=null,op='',fresh=false;
+['AC','±','%','÷','7','8','9','×','4','5','6','−','1','2','3','+','0','.','⌫','='].forEach(function(k){
+  var b=document.createElement('button');b.type='button';b.textContent=k;
+  if('÷×−+='.indexOf(k)>=0)b.className='o';
+  b.onclick=function(){key(k)};$('#keys').appendChild(b);
+});
+function showGen(){
+  var t=g.endsWith('.')?nf.format(Number(g.slice(0,-1)))+'.':nf.format(Number(g));
+  $('#disp').textContent=t;if(mode===0)copyVal=t;cur[0]=t;
+}
+function key(k){
+  var n=Number(g);
+  if(k==='AC'){g='0';saved=null;op='';fresh=false;$('#expr').textContent=''}
+  else if(k==='⌫'){if(!fresh){g=g.length>1?g.slice(0,-1):'0';if(g==='-')g='0'}}
+  else if(k==='±'){g=String(-n)}
+  else if(k==='%'){if(!res(n/100))return}
+  else if('+−×÷'.indexOf(k)>=0){
+    if(op&&!fresh){if(!res(calc(saved,n,op)))return;n=Number(g)}
+    saved=n;op=k;fresh=true;$('#expr').textContent=nf.format(saved)+' '+op;
+  }else if(k==='='){
+    if(saved==null||!op)return;
+    var lab=nf.format(saved)+' '+op+' '+nf.format(n);
+    if(!res(calc(saved,n,op)))return;
+    saved=null;op='';$('#expr').textContent=lab+' =';
+    log(lab,nf.format(Number(g)));
+  }else if(k==='.'){
+    if(fresh){g='0.';fresh=false}else if(g.indexOf('.')<0)g+='.';
+  }else{
+    if(fresh){g=k;fresh=false}else if(g.replace(/\D/g,'').length<15)g=g==='0'?k:g+k;
+  }
+  showGen();
+}
+function calc(a,b,o){return o==='+'?a+b:o==='−'?a-b:o==='×'?a*b:a/b}
+function res(v){
+  if(!isFinite(v)||Math.abs(v)>1e15){g='0';saved=null;op='';fresh=true;$('#disp').textContent='계산할 수 없습니다';cur[0]='';copyVal='';return false}
+  g=String(Number(v.toPrecision(12)));fresh=true;return true;
+}
+document.addEventListener('keydown',function(e){
+  if(mode!==0||e.target.tagName==='INPUT'||e.ctrlKey||e.metaKey)return;
+  var m={'*':'×','/':'÷','-':'−','Enter':'=','Backspace':'⌫','Escape':'AC'},k=m[e.key]||e.key;
+  if(/^[0-9.+=%]$/.test(k)||'×÷−⌫'.indexOf(k)>=0||k==='AC'){e.preventDefault();key(k)}
+});
+
+/* 2. 할인 — 아는 값 두 칸으로 나머지를 채움 */
+var DF=[['p','원래 가격','원'],['r','할인율','%'],['d','할인 금액','원'],['f','최종 가격','원']];
+$('#dsc').innerHTML=DF.map(function(x){return '<label>'+x[1]+'<span><input data-k="'+x[0]+'" inputmode="decimal"><i>'+x[2]+'</i></span></label>'}).join('');
+var man={},ord=[],dlab=null;
+function discount(v){
+  var p=v.p,r=v.r,d=v.d,f=v.f,h=function(k){return k in v};
+  if(h('p')&&h('r')){d=p*r/100;f=p-d}
+  else if(h('p')&&h('d')){if(!p)throw Error('원래 가격이 0이면 할인율을 정할 수 없습니다.');r=d/p*100;f=p-d}
+  else if(h('p')&&h('f')){if(!p)throw Error('원래 가격이 0이면 할인율을 정할 수 없습니다.');d=p-f;r=d/p*100}
+  else if(h('r')&&h('d')){if(!r)throw Error('할인율 0%로는 원래 가격을 정할 수 없습니다.');p=d*100/r;f=p-d}
+  else if(h('r')&&h('f')){if(r===100)throw Error('100% 할인으로는 원래 가격을 정할 수 없습니다.');p=f/(1-r/100);d=p-f}
+  else{p=d+f;if(!p)throw Error('두 금액이 모두 0이면 할인율을 정할 수 없습니다.');r=d/p*100}
+  if([p,r,d,f].some(function(x){return !isFinite(x)||x<0})||r>100)throw Error('가격은 0 이상, 할인율은 0~100%여야 합니다.');
+  return {p:p,r:r,d:d,f:f};
+}
+function updDsc(){
+  var ins=[].slice.call(document.querySelectorAll('[data-k]')),m=$('#dmsg');
+  ins.forEach(function(i){if(!(i.dataset.k in man))i.value=''});
+  dlab=null;
+  if(ord.length<2){m.className='msg';m.textContent='아는 값 두 칸을 입력하세요. 나머지는 자동 계산됩니다.';setRes('');return}
+  try{
+    var v=discount(man);
+    ins.forEach(function(i){var k=i.dataset.k;if(!(k in man))i.value=k==='r'?dec(v[k],4):dec(Math.round(v[k]),0)});
+    m.className='msg';m.textContent='';
+    setRes('최종 '+won(v.f)+' (할인 '+won(v.d)+', '+dec(v.r,2)+'%)');
+    dlab=[won(v.p)+' − '+dec(v.r,2)+'%',won(v.f)];
+  }catch(e){m.className='msg e';m.textContent=e.message;setRes('')}
+}
+document.querySelectorAll('[data-k]').forEach(function(i){
+  var k=i.dataset.k;
+  i.oninput=function(){
+    delete man[k];ord=ord.filter(function(x){return x!==k});
+    if(i.value.trim()){
+      var n=num(i.value);
+      if(n==null){$('#dmsg').className='msg e';$('#dmsg').textContent='숫자를 입력하세요.';return}
+      man[k]=n;ord.push(k);if(ord.length>2)delete man[ord.shift()];
+    }
+    updDsc();
+  };
+  i.onchange=function(){if(dlab)log(dlab[0],dlab[1])};
+});
+
+/* 3. 환율 USD↔KRW — 키 없는 공개 API. 하루 단위 갱신이라 '실시간'이라 쓰지 않음 */
+var URLS=['https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.min.json','https://latest.currency-api.pages.dev/v1/currencies/usd.min.json'];
+var rate=null,src='usd',flab=null;
+function paintRate(date,note){
+  $('#rate').textContent='1 USD = '+dec(rate,2)+' KRW';
+  $('#rdate').textContent='기준일: '+date+' · '+note;
+}
+function updFx(){
+  var a=$('#'+src),b=$(src==='usd'?'#krw':'#usd'),n=num(a.value);
+  flab=null;
+  if(n==null||rate==null){b.value='';setRes('');return}
+  var c=src==='usd'?n*rate:n/rate;
+  b.value=src==='usd'?dec(Math.round(c),0):dec(c,2);
+  setRes(src==='usd'?dec(n,2)+' USD = '+won(c):dec(n,0)+'원 = '+dec(c,2)+' USD');
+  flab=src==='usd'?[dec(n,2)+' USD',won(c)]:[dec(n,0)+'원',dec(c,2)+' USD'];
+}
+['usd','krw'].forEach(function(id){
+  $('#'+id).oninput=function(){src=id;updFx()};
+  $('#'+id).onchange=function(){if(flab)log(flab[0],flab[1])};
+});
+async function fetchRate(){
+  $('#fmsg').textContent='환율을 확인하는 중…';
+  for(var i=0;i<URLS.length;i++){
+    try{
+      var r=await fetch(URLS[i],{cache:'no-store'});if(!r.ok)throw 0;
+      var d=await r.json(),v=Number(d.usd&&d.usd.krw);
+      if(!(v>0)||!/^\d{4}-\d\d-\d\d$/.test(d.date))throw 0;
+      rate=v;store('calc_rate',{rate:v,date:d.date});
+      paintRate(d.date,'하루 단위 환율');$('#fmsg').textContent='';updFx();return;
+    }catch(e){}
+  }
+  $('#fmsg').textContent=rate==null?'환율을 불러오지 못했습니다. 연결 후 다시 눌러 주세요.':'현재 환율을 불러오지 못해 마지막 업데이트 환율을 사용합니다.';
+  updFx();
+}
+var cr=store('calc_rate');
+if(cr&&cr.rate>0){rate=cr.rate;paintRate(cr.date,'저장된 환율')}
+$('#refresh').onclick=fetchRate;fetchRate();
+
+/* 4. 퍼센트 */
+var PM=[['of','어떤 수의 몇 %'],['ratio','A는 B의 몇 %'],['add','퍼센트 증가'],['sub','퍼센트 감소']],pmode='of',plab=null;
+PM.forEach(function(x){var b=document.createElement('button');b.type='button';b.textContent=x[1];b.dataset.m=x[0];b.onclick=function(){setPm(x[0])};$('#pm').appendChild(b)});
+function setPm(m){
+  pmode=m;
+  [].forEach.call($('#pm').children,function(b){b.setAttribute('aria-pressed',b.dataset.m===m)});
+  var r=m==='ratio';
+  $('#pa-l').firstChild.textContent=r?'A (비교할 수)':'기준 금액';
+  $('#pb-l').firstChild.textContent=r?'B (전체)':'퍼센트';
+  $('#pu').textContent=r?'':'%';
+  $('#pa').value=$('#pb').value='';updPct();
+}
+function updPct(){
+  var a=num($('#pa').value),b=num($('#pb').value),m=$('#pmsg');m.textContent='';plab=null;
+  if(a==null||b==null){setRes('');return}
+  if(pmode==='ratio'&&b===0){m.textContent='B가 0이면 비율을 셀 수 없습니다.';setRes('');return}
+  var v,lab;
+  if(pmode==='of'){v=won(a*b/100);lab=dec(a,4)+'의 '+dec(b,4)+'%'}
+  else if(pmode==='ratio'){v=dec(a/b*100,4)+'%';lab=dec(a,4)+'은 '+dec(b,4)+'의 몇 %'}
+  else if(pmode==='add'){v=won(a*(1+b/100));lab=won(a)+' + '+dec(b,4)+'%';m.textContent='+'+won(a*b/100)}
+  else{v=won(a*(1-b/100));lab=won(a)+' − '+dec(b,4)+'%';m.textContent='−'+won(a*b/100)}
+  setRes(v);plab=[lab,v];
+}
+['#pa','#pb'].forEach(function(s){$(s).oninput=updPct;$(s).onchange=function(){if(plab)log(plab[0],plab[1])}});
+
+/* 복사 */
+$('#copy').onclick=async function(){
+  var m=$('#cmsg');
+  if(!copyVal){m.textContent='복사할 결과가 없습니다.';return}
+  try{await navigator.clipboard.writeText(copyVal);m.textContent='복사했습니다: '+copyVal}catch(e){m.textContent='복사할 수 없습니다.'}
+  var l=mode===1?dlab:mode===2?flab:mode===3?plab:null;
+  if(l)log(l[0],l[1]);
+};
+
+setPm('of');paintHist();show(0);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
+})();
+</script>
+</body>
+</html>
