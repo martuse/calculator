@@ -1,0 +1,3 @@
+# 서비스워커는 캐시하지 않습니다 — 새 판을 올려도 구버전에 갇히지 않게.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate

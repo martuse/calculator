@@ -1,0 +1,9 @@
+wrangler.jsonc
+.assetsignore
+.gitignore
+netlify.toml
+node_modules
+.git
+.wrangler
+*.txt
+*.md
